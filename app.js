@@ -4,6 +4,7 @@ const session = require('express-session');
 const { Strategy } = require('passport-local');
 const db = require('./config/db');
 const User = require('./models/User');
+const authRoutes = require('./routes/authRoutes');
 
 const app = express();
 
@@ -56,6 +57,8 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 // Routes
+app.use('/auth', authRoutes);
+
 app.post('/auth/login', passport.authenticate('local', {
   successRedirect: '/protected',
   failureRedirect: '/login',
