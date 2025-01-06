@@ -1,64 +1,72 @@
-const passport = require('passport');
-const LocalStrategy = require('passport-local').Strategy;
-const User = require('./models/User');
-const bcrypt = require('bcryptjs');
-
-passport.use(
-    new LocalStrategy(
-        { usernameField: 'email' },
-        async (email, password, done) => {
-            try {
-                const user = await User.findByEmail(email);
-                if (!user) return done(null, false, { message: 'User not found' });
-
-                const isMatch = await bcrypt.compare(password, user.password);
-                if (!isMatch) return done(null, false, { message: 'Incorrect password' });
-
-                return done(null, user);
-            } catch (err) {
-                return done(err);
-            }
-        }
-    )
-);
-
-passport.serializeUser((user, done) => {
-    done(null, user.id);    
-});
-
-passport.deserializeUser(async (id, done) => {
-    try {
-        const [user] = await db.query('SELECT * FROM users WHERE id = ?', [id]);
-        done(null, user[0]);
-    } catch (err) {
-        done(err);
-    }
-});
-
-require('dotenv').config();
 const express = require('express');
-const session = require('express-session');
 const passport = require('passport');
-const authRoutes = require('./routes/authRoutes');
-
-require('./config/passport');
+const session = require('express-session');
+const { Strategy } = require('passport-local');
+const db = require('./config/db');
+const User = require('./models/User');
 
 const app = express();
 
+// Middleware
 app.use(express.json());
-app.user(
-    session({
-        secret: process.env.SESSION_SECRET,
-        resave: false,
-        saveUninitialized: false,
-    })
+app.use(express.urlencoded({ extended: true }));
+
+// Session Configuration
+app.use(
+  session({
+    secret: 'yourSecret',
+    resave: false,
+    saveUninitialized: false,
+  })
 );
+
+// Passport Configuration
+passport.use(
+  new Strategy({ usernameField: 'email' }, async (email, password, done) => {
+    try {
+      const user = await User.findOne({ where: { email } });
+      if (!user) return done(null, false, { message: 'User not found' });
+
+      const isMatch = await user.validatePassword(password);
+      if (!isMatch) return done(null, false, { message: 'Invalid password' });
+
+      return done(null, user);
+    } catch (err) {
+      return done(err);
+    }
+  })
+);
+
+// Serialize and Deserialize User
+passport.serializeUser((user, done) => {
+  done(null, user.id);
+});
+
+passport.deserializeUser(async (id, done) => {
+  try {
+    const user = await User.findByPk(id);
+    done(null, user);
+  } catch (err) {
+    done(err);
+  }
+});
+
+// Initialize Passport
 app.use(passport.initialize());
 app.use(passport.session());
 
-app.use('/auth', authRoutes);
+// Routes
+app.post('/auth/login', passport.authenticate('local', {
+  successRedirect: '/protected',
+  failureRedirect: '/login',
+}));
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+app.get('/protected', (req, res) => {
+  if (req.isAuthenticated()) {
+    return res.send('Welcome to the protected route!');
+  }
+  res.redirect('/login');
 });
+
+// Start Server
+app.listen(5000, () => console.log('Server running on port 5000'));
